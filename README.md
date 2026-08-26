@@ -22,7 +22,7 @@ omarchy plugin add https://github.com/nousd/voxbox.git --enable
 ```
 
 Bar icon: **click** — panel · **right-click** — capture a region · **middle** — play/pause.
-No keybindings are installed — bind `voxbox` or `omarchy-shell voxbox toggle` however you like.
+No keybindings are installed — bind `voxbox` or `omarchy-shell shell toggle io.github.nousd.voxbox` however you like.
 
 Standalone (any Wayland desktop):
 
