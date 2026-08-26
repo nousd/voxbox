@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.nousd.voxbox",
+  "name": "Voxbox",
+  "version": "2.0.0",
+  "author": "nousd",
+  "license": "MIT",
+  "description": "Read anything on screen aloud: region OCR, selection and documents, 51 offline languages with per-sentence auto-detection",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "Voxbox",
+    "description": "Offline text-to-speech reader: OCR a screen region or read your selection",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

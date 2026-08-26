@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Download extra offline voices for Voxbox. Kokoro already covers English,
+# Spanish, French, Italian, Portuguese, Hindi, Japanese and Chinese; this adds
+# piper voices for other languages. Voxbox picks any voice you drop in up
+# automatically the next time it starts.
+#
+#   voxbox-add-language              # list installable languages
+#   voxbox-add-language el de ru     # add Greek, German, Russian
+#   voxbox-add-language --all        # add every available language (~3 GB)
+set -euo pipefail
+
+SHARE="${VOXBOX_HOME:-$HOME/.local/share/voxbox}"
+PYTHON="$SHARE/venv/bin/python"
+VOICES="$SHARE/voices"
+
+[[ -x $PYTHON ]] || { echo "Voxbox is not installed at $SHARE. Run install.sh first." >&2; exit 1; }
+mkdir -p "$VOICES"
+
+# The ISO -> piper voice table lives next to this script when run from the repo,
+# and is copied beside it on install.
+LANGMAP="$(dirname "$(readlink -f "$0")")/_langmap.py"
+[[ -f $LANGMAP ]] || LANGMAP="$SHARE/_langmap.py"
+
+mapfile -t LINES < <("$PYTHON" - "$LANGMAP" <<'PY'
+import sys, runpy
+ns = runpy.run_path(sys.argv[1])
+for iso, (voice, name) in sorted(ns["VOXBOX_LANGS"].items(), key=lambda kv: kv[1][1]):
+    print(f"{iso}\t{voice}\t{name}")
+PY
+)
+
+declare -A VOICE_OF NAME_OF
+for line in "${LINES[@]}"; do
+  IFS=$'\t' read -r iso voice name <<<"$line"
+  VOICE_OF[$iso]=$voice; NAME_OF[$iso]=$name
+done
+
+if [[ $# -eq 0 ]]; then
+  echo "Installable languages (pass their codes):"
+  for iso in $(printf '%s\n' "${!NAME_OF[@]}" | sort); do
+    printf '  %-4s %s\n' "$iso" "${NAME_OF[$iso]}"
+  done
+  echo
+  echo "Already covered offline by Kokoro: en es fr it pt hi ja zh"
+  exit 0
+fi
+
+targets=()
+if [[ ${1:-} == "--all" ]]; then
+  targets=("${!VOICE_OF[@]}")
+else
+  for iso in "$@"; do
+    if [[ -n ${VOICE_OF[$iso]:-} ]]; then targets+=("$iso"); else echo "unknown language: $iso (run with no arguments to list)" >&2; fi
+  done
+fi
+[[ ${#targets[@]} -gt 0 ]] || exit 1
+
+names=()
+for iso in "${targets[@]}"; do names+=("${VOICE_OF[$iso]}"); done
+echo "Downloading ${#names[@]} voice(s) into $VOICES ..."
+( cd "$VOICES" && "$PYTHON" -m piper.download_voices "${names[@]}" )
+
+# OCR data for the same languages (tessdata_fast; no root needed). The private
+# tessdata dir must always contain eng + osd, since once it exists Voxbox
+# points tesseract at it exclusively.
+TESS="$SHARE/tessdata"
+declare -A TESS_OF
+while IFS=$'\t' read -r iso code; do TESS_OF[$iso]=$code; done < <("$PYTHON" - "$LANGMAP" <<'PY2'
+import sys, runpy
+ns = runpy.run_path(sys.argv[1])
+for iso, code in sorted(ns.get("VOXBOX_TESS", {}).items()):
+    print(f"{iso}\t{code}")
+PY2
+)
+packs=(eng osd)
+for iso in "${targets[@]}"; do [[ -n ${TESS_OF[$iso]:-} ]] && packs+=("${TESS_OF[$iso]}"); done
+mkdir -p "$TESS"
+for code in "${packs[@]}"; do
+  [[ -f $TESS/$code.traineddata ]] && continue
+  echo "Fetching OCR pack: $code"
+  curl -sfL --max-time 120 -o "$TESS/$code.traineddata" \
+    "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$code.traineddata" \
+    || { rm -f "$TESS/$code.traineddata"; echo "  (failed - OCR for $code can be added later)"; }
+done
+
+echo "Done. Restart Voxbox (voxbox quit, then reopen) to see the new languages."
