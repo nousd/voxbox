@@ -5,12 +5,16 @@
   "version": "2.0.0",
   "author": "nousd",
   "license": "MIT",
-  "description": "Read anything on screen aloud: region OCR, selection and documents, 51 offline languages with per-sentence auto-detection",
-  "kinds": ["bar-widget"],
-  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "description": "Reads anything on your screen aloud. 100% offline. 51 languages.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
   "barWidget": {
     "displayName": "Voxbox",
-    "description": "Offline text-to-speech reader: OCR a screen region or read your selection",
+    "description": "Read a screen region or your selection aloud, offline",
     "category": "Media",
     "allowMultiple": false,
     "defaultSection": "right"
