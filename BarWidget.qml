@@ -176,7 +176,6 @@ BarWidget {
     bar: root.bar
     text: "󰔊"
     active: root.playing
-    tooltipText: "Voxbox — click: panel · right: read a region · middle: play/pause"
     onPressed: function(btn) {
       if (btn === Qt.RightButton) root.captureRegion()
       else if (btn === Qt.MiddleButton) root.sendCmd({ cmd: "toggle" })
