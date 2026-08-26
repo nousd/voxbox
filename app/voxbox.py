@@ -757,7 +757,7 @@ class LanguageRouter:
 
     MIN_LETTERS = 12      # below this a fragment inherits the previous language
     # lingua is sure about full sentences (~1.0) but guesses on short ones
-    # ("Hello Giorgos." → Italian at 0.58), so short text must be near-certain
+    # ("Hello Marcus." → Italian), so short text must be near-certain
     # before it can pull the reading away from the current language.
     CONFIDENCE_LONG = 0.5
     CONFIDENCE_SHORT = 0.8
