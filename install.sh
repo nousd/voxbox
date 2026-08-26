@@ -79,13 +79,20 @@ chmod +x "$BIN/voxbox"
 
 install -m 0755 "$REPO/app/bin/voxbox-add-language" "$BIN/voxbox-add-language"
 
+# launcher icon (hicolor)
+for sz in 256 128 64 48; do
+  ICONDIR="$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps"
+  mkdir -p "$ICONDIR"
+  cp "$REPO/assets/icon.png" "$ICONDIR/voxbox.png"
+done
+
 cat > "$DESKTOP/voxbox.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Voxbox
 Comment=Grab text off the screen and read it aloud
 Exec=$BIN/voxbox
-Icon=audio-speakers-symbolic
+Icon=voxbox
 Terminal=false
 Categories=Utility;Accessibility;AudioVideo;
 StartupWMClass=org.voxbox.Voxbox

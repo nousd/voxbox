@@ -10,6 +10,7 @@ command -v voxbox >/dev/null && voxbox quit >/dev/null 2>&1 || true
 
 rm -f "$BIN/voxbox" "$BIN/voxbox-add-language"
 rm -f "$DESKTOP/voxbox.desktop"
+rm -f "$HOME"/.local/share/icons/hicolor/*/apps/voxbox.png
 rm -rf "$SHARE"                       # app, venv, models, voices, tessdata
 echo "Removed the app, venv, models and voices."
 
