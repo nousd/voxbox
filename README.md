@@ -1,156 +1,61 @@
 # Voxbox
 
-Grab text off your screen and have it read aloud — a small, fully offline
-text-to-speech reader for Linux desktops, shipped both as an
-[Omarchy](https://omarchy.org) shell plugin (bar widget + native panel) and as a
-standalone GTK4 app for any Wayland session.
-
-Select a region of the screen (an image, a PDF, a video frame, unselectable UI
-text), Voxbox OCRs it and reads it in a natural neural voice. Or read your
-current text selection, open a document, or export the whole thing to an MP3.
+Reads anything on your screen aloud. 100% offline — no cloud, no accounts, no
+privacy concerns.
 
 ![Voxbox](assets/screenshot.png)
 
-## Why
+- Drag a box over anything on screen → OCR → speech
+- Read your text selection, or a PDF / EPUB / txt / HTML file
+- 51 languages offline, auto-detected per sentence — mixed-language text just works
+- Export to MP3 / WAV / FLAC / OGG
+- Omarchy shell plugin (bar widget + native panel) and standalone GTK4 app
+- Follows your Omarchy theme, live
 
-Apps like NaturalReader and Speechify do this on Windows/macOS behind a
-subscription and the cloud. Voxbox is local and free: nothing leaves your
-machine, there is no account, and it themes itself to match your desktop.
+## Install
 
-## Features
+Omarchy plugin:
 
-- **Region → OCR → speech** — drag a box over anything on screen; it reads what's inside.
-- **Read selection** — speak whatever text you've highlighted, no copy needed.
-- **Open a document** — PDF, EPUB, plain text, Markdown or HTML.
-- **Export to audio** — save the loaded text as MP3 / WAV / FLAC / OGG.
-- **51 languages, offline** — [Kokoro](https://github.com/thewh1teagle/kokoro-onnx)
-  for English + 7 major languages, [piper](https://github.com/OHF-Voice/piper1-gpl)
-  for the rest.
-- **Automatic language switching** — each sentence is detected and handed to a
-  voice that speaks it, so mixed-language text (e.g. Greek with English terms)
-  reads correctly.
-- **Sentence-synced highlighting**, adjustable speed and volume, per-language
-  voice memory.
-- **Themed to your desktop** — reads Omarchy's colours, font and rounding, and
-  re-themes live when you switch themes.
+```bash
+omarchy plugin add https://github.com/nousd/voxbox.git --enable
+~/.config/omarchy/plugins/io.github.nousd.voxbox/install.sh   # speech engine, ~600 MB, once
+```
 
-## Requirements
+Bar icon: **click** — panel · **right-click** — capture a region · **middle** — play/pause.
+Optional keybinding: `o.bind("SUPER + SHIFT + R", "Voxbox", "omarchy-shell voxbox toggle")`
 
-Required: `python3`, `python-gobject`, `gtk4`, `libadwaita`, `ffmpeg`.
-Recommended (each enables a feature): `grim`, `slurp`, `hyprpicker`, `tesseract`
-(screen OCR); `wl-clipboard` (read selection); `poppler` a.k.a. `pdftotext`
-(open PDFs).
+Standalone (any Wayland desktop):
 
-On Arch / Omarchy:
+```bash
+git clone https://github.com/nousd/voxbox.git && cd voxbox && ./install.sh
+```
+
+System packages (Arch):
 
 ```bash
 sudo pacman -S --needed python python-gobject gtk4 libadwaita ffmpeg \
   grim slurp hyprpicker tesseract tesseract-data-eng wl-clipboard poppler
 ```
 
-## Install as an Omarchy shell plugin (recommended)
+More languages — voice and OCR data, no root:
 
 ```bash
-omarchy plugin add https://github.com/nousd/voxbox.git --enable
-~/.config/omarchy/plugins/io.github.nousd.voxbox/install.sh   # speech engine (~600 MB, once)
+voxbox-add-language el de      # no arguments lists all 43
 ```
 
-A speaker icon appears in your bar: **click** it for the panel, **right-click**
-to capture a screen region straight away, **middle-click** to play/pause.
-Bind a key if you like:
+## Standalone app keys
 
-```lua
-o.bind("SUPER + SHIFT + R", "Voxbox", "omarchy-shell voxbox toggle")
-```
-
-The panel is a native shell panel — it follows your theme automatically. The
-speech engine (Python venv + voice models) lives under `~/.local/share/voxbox`
-and is shared with the standalone app below.
-
-## Install standalone (any Wayland desktop)
-
-```bash
-git clone https://github.com/nousd/voxbox.git
-cd voxbox
-./install.sh                       # English + the other Kokoro languages
-# ./install.sh --languages el de ru   # add specific languages
-# ./install.sh --all-languages         # every language (~3 GB of voices)
-```
-
-This also installs a GTK4 app (`voxbox`) with the same features plus a file
-opener and an export dialog; on Hyprland the installer offers keybindings.
-
-Add languages any time:
-
-```bash
-voxbox-add-language            # list installable languages
-voxbox-add-language el de      # add Greek and German
-```
-
-`voxbox-add-language` also fetches the matching OCR data (tessdata_fast, no
-root needed), so captured Greek/German/etc. text is recognised correctly.
-
-## Usage
-
-Run `voxbox`, or use the keybindings (added by the installer):
-
-| Key | Action |
-| --- | --- |
-| `Super`+`Shift`+`R` | Open / focus the panel |
-| `Super`+`Alt`+`T` | Read the highlighted text |
-| `Super`+`Alt`+`V` | Drag a box → OCR → read |
-| `Super`+`Alt`+`P` | Play / pause |
-
-Inside the panel: `Space` play/pause, `←`/`→` skip a sentence, `Ctrl`+`R`
-region, `Ctrl`+`V` selection, `Ctrl`+`O` open a file, `Ctrl`+`E` export,
-`Esc` hide. The text area is editable — fix an OCR slip and it re-reads. Pick a
-voice per language from the dropdown; the ▶ next to it previews the voice.
-
-## Configuration
-
-Settings live in `~/.config/voxbox/config.json` (voice, per-language voices,
-speed, volume, OCR languages). Drop custom CSS in `~/.config/voxbox/style.css`
-to tweak the look; it loads on top of the generated theme. Run `voxbox theme`
-to print the stylesheet Voxbox generates from your current Omarchy theme.
-
-Environment overrides: `VOXBOX_CONFIG_DIR`, `VOXBOX_HOME`, `VOXBOX_APP_ID`.
+`Super+Shift+R` panel · `Super+Alt+V` region · `Super+Alt+T` selection · `Super+Alt+P` play/pause.
+Inside: `Space` play/pause · `←/→` skip · `Ctrl+R/V/O/E` region/selection/open/export · `Esc` hide.
+The text is editable — fix an OCR slip and it re-reads.
 
 ## Uninstall
 
 ```bash
-./uninstall.sh            # keeps your settings
-./uninstall.sh --purge    # removes settings too
+./uninstall.sh          # --purge removes settings too
 ```
-
-## Privacy
-
-Voxbox runs entirely on your machine. After installation it works fully
-offline — synthesis (Kokoro/piper), OCR (tesseract) and language detection
-(lingua) are all local, and the app makes no network connections, has no
-telemetry and no accounts. Nothing you read is stored: captured text lives
-only in memory, is never written to the clipboard or to disk, and the config
-file keeps just your voice/speed/volume choices. Audio leaves the app only
-through your speakers, and through files you explicitly export.
-
-## How it works
-
-- **OCR**: `grim` captures the region (frozen with `hyprpicker`), `tesseract`
-  reads it. The language pack is chosen from tesseract's own script detection
-  combined with the languages you use.
-- **TTS**: Kokoro (ONNX) and piper run on the CPU, a sentence ahead of playback,
-  so speech starts almost immediately. Audio is streamed through PipeWire.
-- **Language detection**: the alphabet narrows the candidates, then
-  [lingua](https://github.com/pemistahl/lingua-py) decides between languages
-  that share a script. Short fragments inherit the surrounding language.
-
-## Credits
 
 Built on [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx),
 [piper](https://github.com/OHF-Voice/piper1-gpl),
-[lingua](https://github.com/pemistahl/lingua-py),
-[tesseract](https://github.com/tesseract-ocr/tesseract) and GTK4/libadwaita.
-Voice models carry their own licenses (Kokoro: Apache-2.0; piper voices: MIT/CC).
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+[lingua](https://github.com/pemistahl/lingua-py) and
+[tesseract](https://github.com/tesseract-ocr/tesseract). MIT — see [LICENSE](LICENSE).
