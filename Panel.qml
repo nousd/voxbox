@@ -21,9 +21,6 @@ Panel {
   readonly property color dim: Qt.darker(contentForeground, 1.4)
 
   readonly property int curIndex: host ? host.sentenceIndex : 0
-  // live values while a slider is being dragged (-1 = not dragging)
-  property real speedDrag: -1
-  property real volumeDrag: -1
   onCurIndexChanged: sentenceList.positionViewAtIndex(curIndex, ListView.Contain)
 
   function open() {
@@ -244,17 +241,17 @@ Panel {
           PanelSectionHeader { id: speedHeader; text: "SPEED"; foreground: root.contentForeground; fontFamily: root.contentFontFamily }
           PanelSectionHeader {
             anchors.right: parent.right
-            text: (root.speedDrag >= 0 ? root.speedDrag : (root.host ? root.host.speed : 1.0)).toFixed(2) + "×"
+            text: speedSlider.liveValue.toFixed(2) + "×"
             foreground: root.contentForeground; fontFamily: root.contentFontFamily
           }
         }
         PanelSlider {
+          id: speedSlider
           width: parent.width
           bar: root.bar
           minimum: 0.5; maximum: 2.0; step: 0.05
           value: root.host ? root.host.speed : 1.0
-          onMoved: function(value) { root.speedDrag = value }
-          onReleased: function(value) { root.speedDrag = -1; root.send({ cmd: "set", speed: value }) }
+          onReleased: function(value) { root.send({ cmd: "set", speed: value }) }
         }
 
         // ---- volume
@@ -264,17 +261,17 @@ Panel {
           PanelSectionHeader { id: volumeHeader; text: "VOLUME"; foreground: root.contentForeground; fontFamily: root.contentFontFamily }
           PanelSectionHeader {
             anchors.right: parent.right
-            text: Math.round((root.volumeDrag >= 0 ? root.volumeDrag : (root.host ? root.host.volume : 0.85)) * 100) + "%"
+            text: Math.round(volumeSlider.liveValue * 100) + "%"
             foreground: root.contentForeground; fontFamily: root.contentFontFamily
           }
         }
         PanelSlider {
+          id: volumeSlider
           width: parent.width
           bar: root.bar
           minimum: 0.0; maximum: 1.0; step: 0.02
           value: root.host ? root.host.volume : 0.85
-          onMoved: function(value) { root.volumeDrag = value }
-          onReleased: function(value) { root.volumeDrag = -1; root.send({ cmd: "set", volume: value }) }
+          onReleased: function(value) { root.send({ cmd: "set", volume: value }) }
         }
       }
     }
