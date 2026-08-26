@@ -1483,7 +1483,30 @@ GLYPH = {
     "stop": "\U000F04DB", "close": "\U000F0156", "voice": "\U000F0033",
     "speed": "\U000F04C5", "volume": "\U000F057E",
     "open": "\U000F0770", "export": "\U000F0224",
+    "pin": "\U000F0403", "unpin": "\U000F0404",
 }
+
+PLUGIN_ID = "io.github.nousd.voxbox"
+
+
+def plugin_pin_state():
+    """None if the Omarchy shell plugin isn't available, else True/False for enabled."""
+    if not which("omarchy"):
+        return None
+    try:
+        out = subprocess.run(["omarchy", "plugin", "list", "--json"],
+                             capture_output=True, text=True, timeout=10).stdout
+        for plugin in json.loads(out):
+            if plugin.get("id") == PLUGIN_ID:
+                return bool(plugin.get("enabled"))
+    except Exception:
+        pass
+    return None
+
+
+def plugin_set_pinned(pinned):
+    subprocess.run(["omarchy", "plugin", "enable" if pinned else "disable", PLUGIN_ID],
+                   capture_output=True, timeout=15)
 
 
 def glyph_label(name, css="icon"):
@@ -1586,12 +1609,52 @@ class VoxboxWindow(Adw.ApplicationWindow):
         labels.append(self.meta)
         hero.append(labels)
 
+        self.pin_btn = icon_button("pin", tooltip="Pin Voxbox to the bar", classes=("action",))
+        self.pin_btn.remove_css_class("bordered")
+        self.pin_btn.set_valign(Gtk.Align.CENTER)
+        self.pin_btn.set_visible(False)
+        self.pin_btn.connect("clicked", lambda *_: self._toggle_pin())
+        hero.append(self.pin_btn)
+        self._pinned = None
+        threading.Thread(target=self._load_pin_state, daemon=True).start()
+
         close = icon_button("close", tooltip="Hide (Esc)", classes=("action",))
         close.remove_css_class("bordered")
         close.set_valign(Gtk.Align.CENTER)
         close.connect("clicked", lambda *_: self._hide())
         hero.append(close)
         return hero
+
+    def _load_pin_state(self):
+        state = plugin_pin_state()
+        GLib.idle_add(self._show_pin_state, state)
+
+    def _show_pin_state(self, state):
+        self._pinned = state
+        self.pin_btn.set_visible(state is not None)
+        if state is not None:
+            glyph = self.pin_btn.get_child().get_first_child()
+            glyph.set_label(GLYPH["unpin"] if state else GLYPH["pin"])
+            self.pin_btn.set_tooltip_text(
+                "Unpin Voxbox from the bar" if state else "Pin Voxbox to the bar")
+        return False
+
+    def _toggle_pin(self):
+        if self._pinned is None:
+            return
+        target = not self._pinned
+        self.pin_btn.set_sensitive(False)
+
+        def work():
+            try:
+                plugin_set_pinned(target)
+                state = plugin_pin_state()
+            except Exception:
+                state = self._pinned
+            GLib.idle_add(self._show_pin_state, state)
+            GLib.idle_add(self.pin_btn.set_sensitive, True)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _build_text_section(self):
         sp = self.sp
@@ -2154,7 +2217,224 @@ class VoxboxApp(Adw.Application):
             return False
 
 
+# --------------------------------------------------------------------------- daemon
+
+
+class Daemon:
+    """Headless mode for the Omarchy shell plugin: JSON lines on stdin/stdout.
+
+    in:  {"cmd": "load", "text": ...} | play | pause | toggle | stop
+         {"cmd": "jump", "delta": ±1} | {"cmd": "goto", "index": n}
+         region | selection | {"cmd": "open", "path"} | {"cmd": "export", "path"}
+         {"cmd": "set", "voice"|"speed"|"volume": value} | voices | status | quit
+    out: {"event": "ready"|"text"|"sentence"|"state"|"error"|"export"|"config", ...}
+    """
+
+    def __init__(self):
+        self.cfg = load_config()
+        self.player = Player(self._on_sentence, self._on_state, self._on_error)
+        self.player.volume = float(self.cfg["volume"])
+        self.player.speed = float(self.cfg["speed"])
+        self.player.voice = self.cfg["voice"] if self.cfg["voice"] in VOICE_INFO else DEFAULTS["voice"]
+        self.player.lang_voices = {k: v for k, v in self.cfg.get("voices_by_lang", {}).items() if v in VOICE_INFO}
+        self._sentences = []
+        self._text = ""
+        self._source = ""
+        self.loop = GLib.MainLoop()
+
+    # -- output -------------------------------------------------------------
+
+    def emit(self, **payload):
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+
+    def _on_sentence(self, idx):
+        self.emit(event="sentence", index=idx, total=len(self._sentences),
+                  lang=self.player.lang_of(idx))
+        return False
+
+    def _on_state(self, playing, finished):
+        self.emit(event="state", playing=bool(playing), finished=bool(finished),
+                  index=self.player.index, total=len(self._sentences))
+        return False
+
+    def _on_error(self, message):
+        self.emit(event="error", message=str(message))
+        return False
+
+    # -- commands -----------------------------------------------------------
+
+    def _send_text(self):
+        self.emit(event="text", text=self._text, sentences=self._sentences,
+                  source=self._source, words=len(self._text.split()))
+
+    def load(self, text, source="", autoplay=True):
+        self._text = clean_text(text)
+        self._source = source
+        self._sentences = split_sentences(self._text)
+        self.player.load(self._sentences)
+        self._send_text()
+        if autoplay and self._sentences:
+            self.player.play()
+
+    def handle(self, msg):
+        cmd = msg.get("cmd")
+        if cmd == "load":
+            self.load(msg.get("text", ""), msg.get("source", ""), msg.get("autoplay", True))
+        elif cmd in ("play", "pause", "toggle", "stop"):
+            getattr(self.player, cmd)()
+        elif cmd == "jump":
+            self.player.jump(int(msg.get("delta", 1)))
+        elif cmd == "goto":
+            self.player.goto(int(msg.get("index", 0)))
+        elif cmd == "region":
+            self.player.pause()
+            threading.Thread(target=self._region, daemon=True).start()
+        elif cmd == "selection":
+            text = capture_selection()
+            if text:
+                self.load(text, "selection")
+            else:
+                self.emit(event="error", message="nothing selected")
+        elif cmd == "open":
+            threading.Thread(target=self._open, args=(msg.get("path", ""),), daemon=True).start()
+        elif cmd == "export":
+            threading.Thread(target=self._export, args=(msg.get("path", ""),), daemon=True).start()
+        elif cmd == "preview":
+            threading.Thread(target=self._preview, args=(msg.get("voice", ""),), daemon=True).start()
+        elif cmd == "set":
+            self._set(msg)
+        elif cmd == "voices":
+            self.emit(event="voices", voices=[
+                {"id": vid, "label": lbl, "iso": iso} for vid, lbl, iso, _e, _l in VOICES
+            ])
+        elif cmd == "status":
+            self._send_text()
+            self._on_state(self.player.playing, False)
+            self.emit(event="config", voice=self.player.voice, speed=self.player.speed,
+                      volume=self.player.volume)
+        elif cmd == "quit":
+            self.loop.quit()
+        else:
+            self.emit(event="error", message=f"unknown cmd: {cmd!r}")
+
+    def _set(self, msg):
+        if "voice" in msg and msg["voice"] in VOICE_INFO:
+            vid = msg["voice"]
+            self.player.voice = vid
+            self.cfg["voice"] = vid
+            self.cfg.setdefault("voices_by_lang", {})[voice_iso(vid)] = vid
+            self.player.lang_voices[voice_iso(vid)] = vid
+            self.player.restart_from(self.player.index)
+        if "speed" in msg:
+            self.player.speed = self.cfg["speed"] = round(float(msg["speed"]), 2)
+            self.player.restart_from(self.player.index)
+        if "volume" in msg:
+            self.player.volume = float(msg["volume"])
+            self.cfg["volume"] = round(self.player.volume, 3)
+        save_config(self.cfg)
+        self.emit(event="config", voice=self.player.voice, speed=self.player.speed,
+                  volume=self.player.volume)
+
+    def _region(self):
+        try:
+            text = capture_region(self.cfg.get("ocr_langs", "eng"), self._ocr_isos())
+        except Exception as exc:
+            GLib.idle_add(self.emit_error_idle, f"capture failed: {exc}")
+            return
+        GLib.idle_add(self._region_done, text)
+
+    def emit_error_idle(self, message):
+        self.emit(event="error", message=message)
+        return False
+
+    def _region_done(self, text):
+        if text is None:
+            self.emit(event="cancelled")
+        elif not text.strip():
+            self.emit(event="error", message="no text in that box")
+        else:
+            self.load(text, "region")
+        return False
+
+    def _ocr_isos(self):
+        isos = [voice_iso(self.player.voice)]
+        isos += [i for i in self.cfg.get("voices_by_lang", {}) if i not in isos]
+        return isos[:6]
+
+    def _open(self, path):
+        try:
+            text = open_document(path)
+        except Exception as exc:
+            GLib.idle_add(self.emit_error_idle, f"open failed: {exc}")
+            return
+        if text.strip():
+            GLib.idle_add(lambda: (self.load(text, Path(path).name), False)[1])
+        else:
+            GLib.idle_add(self.emit_error_idle, "no readable text in file")
+
+    def _export(self, path):
+        if not self._text.strip():
+            GLib.idle_add(self.emit_error_idle, "nothing to export")
+            return
+        if Path(path).suffix == "":
+            path += ".mp3"
+        try:
+            samples = synthesize_all(
+                self._text, self.player.voice, dict(self.player.lang_voices), self.player.speed,
+                on_progress=lambda i, n: GLib.idle_add(
+                    lambda: (self.emit(event="export", progress=f"{i}/{n}"), False)[1]),
+            )
+            encode_audio(samples, path, self.player.volume)
+        except Exception as exc:
+            GLib.idle_add(self.emit_error_idle, f"export failed: {exc}")
+        else:
+            GLib.idle_add(lambda: (self.emit(event="export", done=True, path=path), False)[1])
+
+    def _preview(self, vid):
+        if vid not in VOICE_INFO:
+            return
+        info = VOICE_INFO[vid]
+        line = PREVIEW_LINES.get(info["iso"], PREVIEW_LINES["en"])
+        try:
+            samples = ENGINES[info["engine"]].synth(line, vid, self.player.speed, info["engine_lang"])
+            GLib.idle_add(lambda: (self.player.preview(samples), False)[1])
+        except Exception as exc:
+            GLib.idle_add(self.emit_error_idle, str(exc))
+
+    # -- stdin --------------------------------------------------------------
+
+    def _on_stdin(self, channel, condition):
+        if condition & GLib.IOCondition.HUP:
+            self.loop.quit()
+            return False
+        line = channel.readline()
+        if not line:
+            self.loop.quit()
+            return False
+        line = line.strip()
+        if line:
+            try:
+                self.handle(json.loads(line))
+            except Exception as exc:
+                self.emit(event="error", message=f"bad command: {exc}")
+        return True
+
+    def run(self):
+        channel = GLib.IOChannel.unix_new(sys.stdin.fileno())
+        GLib.io_add_watch(channel, GLib.PRIORITY_DEFAULT,
+                          GLib.IOCondition.IN | GLib.IOCondition.HUP, self._on_stdin)
+        self.emit(event="ready", voices=[{"id": v, "label": i["label"], "iso": i["iso"]}
+                                         for v, i in VOICE_INFO.items()],
+                  voice=self.player.voice, speed=self.player.speed, volume=self.player.volume,
+                  languages=sorted(AVAILABLE_LANGS))
+        self.loop.run()
+        return 0
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "daemon":
+        return Daemon().run()
     if len(sys.argv) > 1 and sys.argv[1] == "theme":
         THEME.refresh()
         print(THEME.css() or "/* no Omarchy theme found */")
