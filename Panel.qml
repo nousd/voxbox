@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
@@ -41,6 +42,11 @@ Panel {
       + Qt.formatDateTime(new Date(), "yyyyMMdd-HHmmss") + ".mp3"
   }
 
+  Process {
+    id: unpinProc
+    command: ["omarchy", "plugin", "disable", "io.github.nousd.voxbox"]
+  }
+
   KeyboardPanel {
     id: panel
     anchorItem: root.anchorItem
@@ -71,6 +77,14 @@ Panel {
 
         PanelHero {
           title: "Voxbox"
+          trailingControl: Component {
+            PanelActionButton {
+              iconText: "󰐄"
+              foreground: root.contentForeground
+              tooltipText: "Unpin Voxbox from the bar"
+              onClicked: { root.close(); unpinProc.running = true }
+            }
+          }
           meta: ((root.host ? root.host.statusLine : "idle") + (root.host && root.host.sourceLine ? " · " + root.host.sourceLine : "")).toUpperCase()
           foreground: root.contentForeground
           fontFamily: root.contentFontFamily
