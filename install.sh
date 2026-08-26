@@ -103,26 +103,6 @@ if ((${#LANGS[@]})); then
   "$BIN/voxbox-add-language" "${LANGS[@]}" || warn "Language download failed; add them later with voxbox-add-language"
 fi
 
-# --- 6. Hyprland keybindings (Omarchy) — opt in
-BINDINGS="$HOME/.config/hypr/bindings.lua"
-if [[ -f $BINDINGS ]] && ! grep -q "voxbox" "$BINDINGS"; then
-  echo
-  read -rp "Add Hyprland keybindings for Voxbox (Super+Shift+R etc.)? [y/N] " ans || ans=n
-  if [[ ${ans,,} == y* ]]; then
-    cp "$BINDINGS" "$BINDINGS.bak.$(date +%s)"
-    cat >> "$BINDINGS" <<'EOF'
-
--- Voxbox — grab text off the screen and read it aloud.
-o.bind("SUPER + SHIFT + R", "Voxbox reader (Read)", "voxbox")
-o.bind("SUPER + ALT + T", "Read the selected text aloud", "voxbox selection")
-o.bind("SUPER + ALT + V", "Read a screen region aloud", "voxbox region")
-o.bind("SUPER + ALT + P", "Play/pause reading", "voxbox toggle")
-EOF
-    command -v hyprctl >/dev/null && hyprctl reload >/dev/null 2>&1 || true
-    say "Keybindings added (backup saved next to bindings.lua)"
-  fi
-fi
-
 echo
 say "Installed. Make sure $BIN is on your PATH, then run:  voxbox"
 say "Add more languages any time with:  voxbox-add-language"

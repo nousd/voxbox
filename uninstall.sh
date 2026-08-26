@@ -20,7 +20,3 @@ else
   echo "Kept ~/.config/voxbox (pass --purge to remove it)."
 fi
 
-BINDINGS="$HOME/.config/hypr/bindings.lua"
-if [[ -f $BINDINGS ]] && grep -q "voxbox" "$BINDINGS"; then
-  echo "Note: Voxbox keybindings are still in $BINDINGS — remove the 'Voxbox' block by hand."
-fi

@@ -22,7 +22,7 @@ omarchy plugin add https://github.com/nousd/voxbox.git --enable
 ```
 
 Bar icon: **click** — panel · **right-click** — capture a region · **middle** — play/pause.
-Optional keybinding: `o.bind("SUPER + SHIFT + R", "Voxbox", "omarchy-shell voxbox toggle")`
+No keybindings are installed — bind `voxbox` or `omarchy-shell voxbox toggle` however you like.
 
 Standalone (any Wayland desktop):
 
@@ -42,12 +42,6 @@ More languages — voice and OCR data, no root:
 ```bash
 voxbox-add-language el de      # no arguments lists all 43
 ```
-
-## Standalone app keys
-
-`Super+Shift+R` panel · `Super+Alt+V` region · `Super+Alt+T` selection · `Super+Alt+P` play/pause.
-Inside: `Space` play/pause · `←/→` skip · `Ctrl+R/V/O/E` region/selection/open/export · `Esc` hide.
-The text is editable — fix an OCR slip and it re-reads.
 
 ## Uninstall
 
