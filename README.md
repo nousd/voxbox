@@ -122,6 +122,16 @@ Environment overrides: `VOXBOX_CONFIG_DIR`, `VOXBOX_HOME`, `VOXBOX_APP_ID`.
 ./uninstall.sh --purge    # removes settings too
 ```
 
+## Privacy
+
+Voxbox runs entirely on your machine. After installation it works fully
+offline — synthesis (Kokoro/piper), OCR (tesseract) and language detection
+(lingua) are all local, and the app makes no network connections, has no
+telemetry and no accounts. Nothing you read is stored: captured text lives
+only in memory, is never written to the clipboard or to disk, and the config
+file keeps just your voice/speed/volume choices. Audio leaves the app only
+through your speakers, and through files you explicitly export.
+
 ## How it works
 
 - **OCR**: `grim` captures the region (frozen with `hyprpicker`), `tesseract`
