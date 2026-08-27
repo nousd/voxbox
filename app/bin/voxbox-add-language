@@ -18,8 +18,18 @@ mkdir -p "$VOICES"
 
 # The ISO -> piper voice table lives next to this script when run from the repo,
 # and is copied beside it on install.
-LANGMAP="$(dirname "$(readlink -f "$0")")/_langmap.py"
-[[ -f $LANGMAP ]] || LANGMAP="$SHARE/_langmap.py"
+HERE="$(dirname "$(readlink -f "$0")")"
+LANGMAP="$HERE/_langmap.py";        [[ -f $LANGMAP ]] || LANGMAP="$SHARE/_langmap.py"
+MANIFEST="$HERE/_artifacts.json";   [[ -f $MANIFEST ]] || MANIFEST="$SHARE/_artifacts.json"
+FETCH="$HERE/_fetch.sh";            [[ -f $FETCH ]] || FETCH="$SHARE/_fetch.sh"
+source "$FETCH"
+
+piper_file() {  # <fname> <field>
+  python3 - "$MANIFEST" "$1" "$2" <<'PY2'
+import json, sys
+print(json.load(open(sys.argv[1]))["piper"][sys.argv[2]][sys.argv[3]])
+PY2
+}
 
 mapfile -t LINES < <("$PYTHON" - "$LANGMAP" <<'PY'
 import sys, runpy
@@ -55,10 +65,17 @@ else
 fi
 [[ ${#targets[@]} -gt 0 ]] || exit 1
 
-names=()
-for iso in "${targets[@]}"; do names+=("${VOICE_OF[$iso]}"); done
-echo "Downloading ${#names[@]} voice(s) into $VOICES ..."
-( cd "$VOICES" && "$PYTHON" -m piper.download_voices "${names[@]}" )
+echo "Downloading ${#targets[@]} voice(s) into $VOICES (sha256-verified) ..."
+for iso in "${targets[@]}"; do
+  voice="${VOICE_OF[$iso]}"
+  for ext in onnx onnx.json; do
+    fname="$voice.$ext"
+    fetch_verified "https://huggingface.co/rhasspy/piper-voices/resolve/main/$(piper_file "$fname" path)" \
+      "$VOICES/$fname" "$(piper_file "$fname" sha256)" "$(piper_file "$fname" size)" \
+      || { echo "failed: $fname" >&2; exit 1; }
+  done
+  echo "  voice: $voice"
+done
 
 # OCR data for the same languages (tessdata_fast; no root needed). The private
 # tessdata dir must always contain eng + osd, since once it exists Voxbox
@@ -72,15 +89,21 @@ for iso, code in sorted(ns.get("VOXBOX_TESS", {}).items()):
     print(f"{iso}\t{code}")
 PY2
 )
+tess_field() {  # <code> <field>
+  python3 - "$MANIFEST" "$1" "$2" <<'PY2'
+import json, sys
+print(json.load(open(sys.argv[1]))["tessdata"][sys.argv[2]][sys.argv[3]])
+PY2
+}
 packs=(eng osd)
 for iso in "${targets[@]}"; do [[ -n ${TESS_OF[$iso]:-} ]] && packs+=("${TESS_OF[$iso]}"); done
 mkdir -p "$TESS"
 for code in "${packs[@]}"; do
-  [[ -f $TESS/$code.traineddata ]] && continue
-  echo "Fetching OCR pack: $code"
-  curl -sfL --max-time 120 -o "$TESS/$code.traineddata" \
-    "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$code.traineddata" \
-    || { rm -f "$TESS/$code.traineddata"; echo "  (failed - OCR for $code can be added later)"; }
+  echo "OCR pack: $code (sha256-verified)"
+  repo=$(tess_field "$code" repo)
+  fetch_verified "https://github.com/tesseract-ocr/$repo/raw/main/$code.traineddata" \
+    "$TESS/$code.traineddata" "$(tess_field "$code" sha256)" "$(tess_field "$code" size)" \
+    || echo "  (failed - OCR for $code can be added later)"
 done
 
 echo "Done. Restart Voxbox (voxbox quit, then reopen) to see the new languages."

@@ -1,9 +1,0 @@
-# Voxbox Python dependencies (installed into a venv created with
-# --system-site-packages by install.sh, so the system GTK4 / libadwaita /
-# PyGObject are visible too - those come from your distro, not pip:
-#   Arch: sudo pacman -S python-gobject gtk4 libadwaita
-kokoro-onnx          # offline neural TTS (Kokoro-82M)
-piper-tts            # offline TTS for the languages Kokoro doesn't cover
-sounddevice          # PortAudio playback
-lingua-language-detector  # per-sentence language detection
-numpy

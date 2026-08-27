@@ -1,0 +1,8 @@
+# Direct dependencies. The file the installer actually uses is
+# requirements-pinned.txt (exact versions + sha256 hashes), regenerated with:
+#   pip-compile --generate-hashes --strip-extras -o requirements-pinned.txt requirements.in
+kokoro-onnx
+piper-tts
+sounddevice
+lingua-language-detector
+numpy

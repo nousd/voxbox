@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Voxbox installer. Sets up a private Python venv, downloads the offline TTS
-# model, installs the app and launcher, and (on Omarchy/Hyprland) offers to add
-# keybindings. Re-running it updates the app in place.
+# Voxbox installer. Sets up a private Python venv (pinned, hash-verified
+# dependencies), downloads the sha256-verified voice model, installs the app
+# and launcher. Re-running it updates everything in place.
 #
 #   ./install.sh                 # English + the 7 other Kokoro languages
 #   ./install.sh --languages el de ru
@@ -41,7 +41,6 @@ mkdir -p "$SHARE"
 # --system-site-packages so the venv can see the system PyGObject/GTK4/libadwaita,
 # which are not installable from pip.
 python3 -m venv --system-site-packages "$SHARE/venv"
-"$SHARE/venv/bin/pip" install --quiet --upgrade pip
 
 if ! "$SHARE/venv/bin/python" - <<'PYCHECK' 2>/dev/null
 import gi
@@ -53,22 +52,25 @@ then
   warn "Install them (Arch: sudo pacman -S python-gobject gtk4 libadwaita) and re-run."
   exit 1
 fi
-say "Installing Python packages (this can take a minute)"
-"$SHARE/venv/bin/pip" install --quiet -r "$REPO/app/requirements.txt"
+say "Installing Python packages (pinned + hash-verified; this can take a minute)"
+"$SHARE/venv/bin/pip" install --quiet --require-hashes -r "$REPO/app/requirements-pinned.txt"
 
-# --- 3. TTS model (Kokoro) + English/multilingual voices
-say "Downloading the Kokoro voice model (~340 MB, once)"
+# --- 3. TTS model (Kokoro), sha256-verified against app/bin/_artifacts.json
+MANIFEST="$REPO/app/bin/_artifacts.json"
+source "$REPO/app/bin/_fetch.sh"
+say "Downloading the Kokoro voice model (~340 MB, once; sha256-verified)"
 mkdir -p "$SHARE/models"
 for f in kokoro-v1.0.onnx voices-v1.0.bin; do
-  if [[ ! -f $SHARE/models/$f ]]; then
-    curl -fL --progress-bar -o "$SHARE/models/$f" "$MODEL_BASE/$f"
-  fi
+  fetch_verified "$MODEL_BASE/$f" "$SHARE/models/$f" \
+    "$(artifact_field models "$f" sha256)" "$(artifact_field models "$f" size)"
 done
 
 # --- 4. app + launcher + desktop entry
 say "Installing the app"
 cp "$REPO/app/voxbox.py" "$SHARE/voxbox.py"
 cp "$REPO/app/bin/_langmap.py" "$SHARE/_langmap.py"
+cp "$REPO/app/bin/_artifacts.json" "$SHARE/_artifacts.json"
+cp "$REPO/app/bin/_fetch.sh" "$SHARE/_fetch.sh"
 mkdir -p "$BIN" "$DESKTOP"
 
 cat > "$BIN/voxbox" <<EOF

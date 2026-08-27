@@ -49,8 +49,7 @@ VOXBOX_LANGS = {
 VOXBOX_TESS = {
     "ar": "ara", "bg": "bul", "bn": "ben", "ca": "cat", "cs": "ces", "cy": "cym", "da": "dan",
     "de": "deu", "el": "ell", "et": "est", "eu": "eus", "fa": "fas", "fi": "fin", "he": "heb",
-    "hu": "hun", "hy": "hye", "id": "ind", "is": "isl", "ka": "kat", "kk": "kaz", "ko": "kor",
-    "ku": "kur_ara", "lb": "ltz", "lv": "lav", "ml": "mal", "mr": "mar", "ne": "nep", "nl": "nld",
+    "hu": "hun", "hy": "hye", "id": "ind", "is": "isl", "ka": "kat", "kk": "kaz", "ko": "kor", "lb": "ltz", "lv": "lav", "ml": "mal", "mr": "mar", "ne": "nep", "nl": "nld",
     "no": "nor", "pl": "pol", "ro": "ron", "ru": "rus", "sk": "slk", "sl": "slv", "sq": "sqi",
     "sr": "srp", "sv": "swe", "sw": "swa", "te": "tel", "tr": "tur", "uk": "ukr", "ur": "urd",
     "vi": "vie",
