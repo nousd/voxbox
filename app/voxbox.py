@@ -18,6 +18,7 @@ the theme or font changes. Set VOXBOX_APP_ID to run a second, separate instance.
 import json
 import os
 import re
+import select
 import subprocess
 import sys
 import threading
@@ -53,6 +54,65 @@ OMARCHY_COLORS = OMARCHY_STATE / "theme/colors.toml"
 OMARCHY_SHELL_TOML = OMARCHY_STATE / "theme/shell.toml"
 FONTCONFIG = HOME / ".config/fontconfig/fonts.conf"
 SR = 24000  # every engine is resampled to this
+
+# Resource ceilings. Capture, OCR, clipboard, documents and daemon events are
+# hard-bounded so oversized input degrades to a small error event instead of
+# exhausting Voxbox or the shell that parses its output.
+MAX_IMAGE_BYTES = 48 * 1024 * 1024      # region screenshot (PNG from grim)
+MAX_OCR_BYTES = 4 * 1024 * 1024         # tesseract text output
+MAX_TEXT_CHARS = 100_000                # loaded text (~2 hours of speech)
+MAX_FILE_BYTES = 50 * 1024 * 1024       # source document size
+MAX_SENTENCES = 1_500
+MAX_SENTENCE_CHARS = 400                # longer chunks are hard-split
+MAX_EVENT_BYTES = 1024 * 1024           # any single daemon JSON line
+
+
+class InputTooLarge(ValueError):
+    """An input exceeded its ceiling; the operation was abandoned."""
+
+
+def run_capped(cmd, cap, input_bytes=None, timeout=120):
+    """Run a helper reading at most `cap` bytes of its stdout.
+
+    The producer-side ceiling: overflow (or a hung helper) kills the process
+    and raises InputTooLarge, so oversized data never accumulates.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    )
+    if input_bytes is not None:
+        def _feed():
+            try:
+                proc.stdin.write(input_bytes)
+                proc.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+        threading.Thread(target=_feed, daemon=True).start()
+    out = bytearray()
+    deadline = time.time() + timeout
+    fd = proc.stdout
+    try:
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                raise InputTooLarge(f"{cmd[0]} timed out")
+            ready, _, _ = select.select([fd], [], [], min(remaining, 1.0))
+            if not ready:
+                continue
+            chunk = fd.read1(65536)
+            if not chunk:
+                break
+            out += chunk
+            if len(out) > cap:
+                raise InputTooLarge(f"{cmd[0]} output exceeded {cap // (1024*1024)} MB limit")
+    except InputTooLarge:
+        proc.kill()
+        proc.wait()
+        raise
+    proc.wait(timeout=10)
+    return bytes(out)
 PREVIEW_LINES = {
     "en": "This is how I sound when I read your screen.",
     "el": "Έτσι ακούγομαι όταν διαβάζω την οθόνη σου.",
@@ -881,6 +941,20 @@ def split_sentences(text):
             out[-1] = prev + " " + p
         else:
             out.append(p)
+    # Hard bounds: no chunk longer than the sentence ceiling, and no more
+    # chunks than the list ceiling.
+    bounded = []
+    for chunk in out:
+        while len(chunk) > MAX_SENTENCE_CHARS and len(bounded) < MAX_SENTENCES:
+            cut = chunk.rfind(" ", MAX_SENTENCE_CHARS // 2, MAX_SENTENCE_CHARS)
+            if cut < 0:
+                cut = MAX_SENTENCE_CHARS
+            bounded.append(chunk[:cut])
+            chunk = chunk[cut:].lstrip()
+        if len(bounded) >= MAX_SENTENCES:
+            break
+        bounded.append(chunk)
+    out = bounded
     return out or ([text] if text.strip() else [])
 
 
@@ -1337,8 +1411,13 @@ def _epub_text(path):
         if not order:
             order = [n for n in names if n.lower().endswith((".xhtml", ".html", ".htm"))]
         parts = []
+        total = 0
         for name in order:
             try:
+                info = zf.getinfo(name)
+                if info.file_size > MAX_FILE_BYTES or total + info.file_size > MAX_FILE_BYTES:
+                    raise InputTooLarge("EPUB content too large")
+                total += info.file_size
                 parts.append(_strip_html(zf.read(name).decode("utf-8", "replace")))
             except KeyError:
                 continue
@@ -1348,13 +1427,15 @@ def _epub_text(path):
 def open_document(path):
     """Read a document to plain text. Supports txt/md, PDF (pdftotext), EPUB, HTML."""
     path = Path(path)
+    if path.stat().st_size > MAX_FILE_BYTES:
+        raise InputTooLarge(f"file larger than {MAX_FILE_BYTES // (1024*1024)} MB")
     ext = path.suffix.lower()
     if ext == ".pdf":
-        out = subprocess.run(
+        out = run_capped(
             ["pdftotext", "-layout", "-nopgbrk", str(path), "-"],
-            stdin=subprocess.DEVNULL, capture_output=True, timeout=120,
+            MAX_TEXT_CHARS * 6, timeout=120,
         )
-        return out.stdout.decode("utf-8", "replace")
+        return out.decode("utf-8", "replace")
     if ext == ".epub":
         return _epub_text(path)
     if ext in (".html", ".htm", ".xhtml"):
@@ -1426,12 +1507,12 @@ def ocr_image(image_png, base_langs="eng", user_isos=()):
     base = [l for l in re.split(r"[+,\s]+", base_langs) if l in available]
     langs = list(dict.fromkeys(pack + mine + base)) or ["eng"]
     lang_arg = "+".join(langs)
-    ocr = subprocess.run(
+    ocr_out = run_capped(
         ["tesseract", "stdin", "stdout", "--oem", "1", "--psm", "6", "-l", lang_arg, "--dpi", "300",
          "-c", "preserve_interword_spaces=1", *_tessdata_args()],
-        input=image_png, capture_output=True,
+        MAX_OCR_BYTES, input_bytes=image_png, timeout=60,
     )
-    return clean_text(ocr.stdout.decode("utf-8", "replace")), lang_arg
+    return clean_text(ocr_out.decode("utf-8", "replace")), lang_arg
 
 
 _capture_lock = threading.Lock()
@@ -1489,7 +1570,7 @@ def capture_region(ocr_langs="eng", user_isos=()):
             sel = ""
         if not sel:
             return None
-        shot = subprocess.run(["grim", "-g", sel, "-"], stdin=subprocess.DEVNULL, capture_output=True).stdout
+        shot = run_capped(["grim", "-g", sel, "-"], MAX_IMAGE_BYTES, timeout=30)
     finally:
         if freeze:
             freeze.terminate()
@@ -1507,9 +1588,12 @@ def capture_region(ocr_langs="eng", user_isos=()):
 def capture_selection():
     for args in (["wl-paste", "--primary", "--no-newline"], ["wl-paste", "--no-newline"]):
         try:
-            text = subprocess.run(args, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3).stdout
+            raw = run_capped(args, MAX_TEXT_CHARS * 4, timeout=5)
+        except InputTooLarge:
+            raise InputTooLarge("selection too large to read")
         except Exception:
             continue
+        text = raw.decode("utf-8", "replace")
         if text and text.strip():
             return clean_text(text)
     return None
@@ -1902,7 +1986,11 @@ class VoxboxWindow(Adw.ApplicationWindow):
         return False
 
     def do_selection(self):
-        text = capture_selection()
+        try:
+            text = capture_selection()
+        except InputTooLarge as exc:
+            self._set_status(str(exc))
+            return
         if not text:
             self._set_status("nothing selected")
             notify("Voxbox: nothing selected")
@@ -2008,10 +2096,15 @@ class VoxboxWindow(Adw.ApplicationWindow):
 
     def load_text(self, text, source="", autoplay=True):
         text = clean_text(text)
+        truncated = len(text) > MAX_TEXT_CHARS
+        if truncated:
+            text = text[:MAX_TEXT_CHARS].rsplit(None, 1)[0]
         self._set_buffer_text(text)
         self._rebuild_sentences(text)
         words = len(text.split())
         self._source_line = f"{words} words from {source}" if source else f"{words} words"
+        if truncated:
+            self._source_line += " (truncated)"
         self._set_status("ready")
         if autoplay and self._sentences:
             self.player.play()
@@ -2287,12 +2380,18 @@ class Daemon:
         self._sentences = []
         self._text = ""
         self._source = ""
+        self._truncated = False
         self.loop = GLib.MainLoop()
 
     # -- output -------------------------------------------------------------
 
     def emit(self, **payload):
-        sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        line = json.dumps(payload, ensure_ascii=False)
+        if len(line.encode("utf-8", "replace")) > MAX_EVENT_BYTES:
+            # Never hand the shell an unbounded line; fail closed with a stub.
+            line = json.dumps({"event": "error",
+                               "message": f"{payload.get('event', 'event')} payload too large"})
+        sys.stdout.write(line + "\n")
         sys.stdout.flush()
 
     def _on_sentence(self, idx):
@@ -2312,11 +2411,15 @@ class Daemon:
     # -- commands -----------------------------------------------------------
 
     def _send_text(self):
-        self.emit(event="text", text=self._text, sentences=self._sentences,
-                  source=self._source, words=len(self._text.split()))
+        # sentences only: the full text would double the payload for nothing.
+        self.emit(event="text", sentences=self._sentences, source=self._source,
+                  words=len(self._text.split()), truncated=self._truncated)
 
     def load(self, text, source="", autoplay=True):
         self._text = clean_text(text)
+        self._truncated = len(self._text) > MAX_TEXT_CHARS
+        if self._truncated:
+            self._text = self._text[:MAX_TEXT_CHARS].rsplit(None, 1)[0]
         self._source = source
         self._sentences = split_sentences(self._text)
         self.player.load(self._sentences)
@@ -2338,7 +2441,11 @@ class Daemon:
             self.player.pause()
             threading.Thread(target=self._region, daemon=True).start()
         elif cmd == "selection":
-            text = capture_selection()
+            try:
+                text = capture_selection()
+            except InputTooLarge as exc:
+                self.emit(event="error", message=str(exc))
+                return
             if text:
                 self.load(text, "selection")
             else:

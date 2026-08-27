@@ -72,7 +72,7 @@ BarWidget {
       sentences = msg.sentences || []
       sentenceTotal = sentences.length
       sentenceIndex = 0
-      sourceLine = sentenceTotal > 0 ? ((msg.words || 0) + " words from " + (msg.source || "screen")) : ""
+      sourceLine = sentenceTotal > 0 ? ((msg.words || 0) + " words from " + (msg.source || "screen") + (msg.truncated ? " · truncated" : "")) : ""
       statusLine = sentenceTotal > 0 ? "ready" : "idle"
       if (reopenAfterCapture) {
         reopenAfterCapture = false
@@ -114,6 +114,7 @@ BarWidget {
       onRead: function(line) {
         line = String(line).trim()
         if (!line) return
+        if (line.length > 2 * 1024 * 1024) return   // never parse an unbounded line
         try { root.handleEvent(JSON.parse(line)) } catch (e) { /* not an event line */ }
       }
     }
