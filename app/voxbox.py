@@ -1352,7 +1352,7 @@ def open_document(path):
     if ext == ".pdf":
         out = subprocess.run(
             ["pdftotext", "-layout", "-nopgbrk", str(path), "-"],
-            capture_output=True, timeout=120,
+            stdin=subprocess.DEVNULL, capture_output=True, timeout=120,
         )
         return out.stdout.decode("utf-8", "replace")
     if ext == ".epub":
@@ -1438,6 +1438,25 @@ _capture_lock = threading.Lock()
 _slurp_proc = None
 
 
+def _wait_for_layer(namespace, timeout=1.5):
+    """Poll hyprctl until a layer with this namespace is mapped. Returns ms waited, or -1."""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            layers = json.loads(subprocess.run(
+                ["hyprctl", "layers", "-j"], capture_output=True, text=True, timeout=2
+            ).stdout)
+            for monitor in layers.values():
+                for level in monitor.get("levels", {}).values():
+                    for layer in level:
+                        if namespace in layer.get("namespace", ""):
+                            return int((time.time() - start) * 1000)
+        except Exception:
+            pass
+        time.sleep(0.03)
+    return -1
+
+
 def capture_region(ocr_langs="eng", user_isos=()):
     """Freeze the screen, let the user drag a box, OCR whatever is inside it.
 
@@ -1454,10 +1473,15 @@ def capture_region(ocr_langs="eng", user_isos=()):
         if which("hyprpicker"):
             freeze = subprocess.Popen(
                 ["hyprpicker", "-r", "-z"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
-            time.sleep(0.15)
-        _slurp_proc = subprocess.Popen(["slurp"], stdout=subprocess.PIPE, text=True)
+            # Wait until the freeze layer is actually mapped before starting
+            # slurp. slurp must map second so it stacks on top - otherwise the
+            # picker eats the first click (prints a color, exits, unfreezes)
+            # and the drag never reaches slurp.
+            _wait_for_layer("hyprpicker", timeout=1.5)
+            time.sleep(0.05)
+        _slurp_proc = subprocess.Popen(["slurp"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         try:
             sel = (_slurp_proc.communicate(timeout=120)[0] or "").strip()
         except subprocess.TimeoutExpired:
@@ -1465,7 +1489,7 @@ def capture_region(ocr_langs="eng", user_isos=()):
             sel = ""
         if not sel:
             return None
-        shot = subprocess.run(["grim", "-g", sel, "-"], capture_output=True).stdout
+        shot = subprocess.run(["grim", "-g", sel, "-"], stdin=subprocess.DEVNULL, capture_output=True).stdout
     finally:
         if freeze:
             freeze.terminate()
@@ -1483,7 +1507,7 @@ def capture_region(ocr_langs="eng", user_isos=()):
 def capture_selection():
     for args in (["wl-paste", "--primary", "--no-newline"], ["wl-paste", "--no-newline"]):
         try:
-            text = subprocess.run(args, capture_output=True, text=True, timeout=3).stdout
+            text = subprocess.run(args, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3).stdout
         except Exception:
             continue
         if text and text.strip():
@@ -1494,7 +1518,7 @@ def capture_selection():
 def notify(message):
     if which("omarchy-notification-send"):
         subprocess.Popen(["omarchy-notification-send", "-g", "\U000f0507", message],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 # --------------------------------------------------------------------------- window
