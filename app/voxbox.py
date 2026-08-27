@@ -1434,8 +1434,21 @@ def ocr_image(image_png, base_langs="eng", user_isos=()):
     return clean_text(ocr.stdout.decode("utf-8", "replace")), lang_arg
 
 
+_capture_lock = threading.Lock()
+_slurp_proc = None
+
+
 def capture_region(ocr_langs="eng", user_isos=()):
-    """Freeze the screen, let the user drag a box, OCR whatever is inside it."""
+    """Freeze the screen, let the user drag a box, OCR whatever is inside it.
+
+    Serialized: a stuck earlier selection is killed rather than fought - two
+    overlapping slurp overlays mean neither can be dragged.
+    """
+    global _slurp_proc
+    if not _capture_lock.acquire(blocking=False):
+        if _slurp_proc and _slurp_proc.poll() is None:
+            _slurp_proc.kill()
+        return None
     freeze = None
     try:
         if which("hyprpicker"):
@@ -1444,13 +1457,23 @@ def capture_region(ocr_langs="eng", user_isos=()):
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             time.sleep(0.15)
-        sel = subprocess.run(["slurp"], capture_output=True, text=True).stdout.strip()
+        _slurp_proc = subprocess.Popen(["slurp"], stdout=subprocess.PIPE, text=True)
+        try:
+            sel = (_slurp_proc.communicate(timeout=120)[0] or "").strip()
+        except subprocess.TimeoutExpired:
+            _slurp_proc.kill()
+            sel = ""
         if not sel:
             return None
         shot = subprocess.run(["grim", "-g", sel, "-"], capture_output=True).stdout
     finally:
         if freeze:
             freeze.terminate()
+            try:
+                freeze.wait(timeout=2)   # reap; no zombies
+            except subprocess.TimeoutExpired:
+                freeze.kill()
+        _capture_lock.release()
     if not shot:
         return None
     text, _langs = ocr_image(shot, ocr_langs, user_isos)
@@ -2337,6 +2360,7 @@ class Daemon:
                   volume=self.player.volume)
 
     def _region(self):
+        time.sleep(0.25)   # let the triggering click's press/release finish
         try:
             text = capture_region(self.cfg.get("ocr_langs", "eng"), self._ocr_isos())
         except Exception as exc:
