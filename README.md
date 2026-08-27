@@ -40,7 +40,7 @@ sudo pacman -S --needed python python-gobject gtk4 libadwaita ffmpeg \
 More languages — voice and OCR data, no root:
 
 ```bash
-voxbox-add-language el de      # no arguments lists all 43
+voxbox-add-language el de      # no arguments lists what you can add
 ```
 
 ## Uninstall
