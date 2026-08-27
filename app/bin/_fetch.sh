@@ -16,8 +16,10 @@ fetch_verified() {  # <url> <dest> <sha256> <size_bytes>
     return 0
   fi
   tmp=$(mktemp "$dest.XXXXXX.part")
-  # ceiling: expected size + 1 MiB slack
-  if ! curl -fsSL --max-filesize $((size + 1048576)) -o "$tmp" "$url"; then
+  # ceiling: expected size + 1 MiB slack. Abort if the transfer stalls
+  # (<1 KiB/s for 60 s) rather than hanging forever on a dead connection.
+  if ! curl -fSL --progress-bar --connect-timeout 30 --speed-limit 1024 --speed-time 60 \
+       --max-filesize $((size + 1048576)) -o "$tmp" "$url"; then
     rm -f "$tmp"; echo "download failed: $url" >&2; return 1
   fi
   if ! echo "$sha  $tmp" | sha256sum -c --quiet; then

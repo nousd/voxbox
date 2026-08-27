@@ -100,7 +100,9 @@ for iso in "${targets[@]}"; do [[ -n ${TESS_OF[$iso]:-} ]] && packs+=("${TESS_OF
 mkdir -p "$TESS"
 for code in "${packs[@]}"; do
   echo "OCR pack: $code (sha256-verified)"
-  repo=$(tess_field "$code" repo)
+  if ! repo=$(tess_field "$code" repo 2>/dev/null); then
+    echo "  (no manifest entry for $code - OCR for $code can be added later)"; continue
+  fi
   fetch_verified "https://github.com/tesseract-ocr/$repo/raw/main/$code.traineddata" \
     "$TESS/$code.traineddata" "$(tess_field "$code" sha256)" "$(tess_field "$code" size)" \
     || echo "  (failed - OCR for $code can be added later)"

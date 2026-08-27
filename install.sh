@@ -36,6 +36,13 @@ if ((${#opt_missing[@]})); then
 fi
 
 # --- 2. python venv + deps
+# requirements-pinned.txt is a hash-locked resolution; it only resolves on the
+# interpreters it was locked for, so fail early with a clear message.
+if ! python3 -c 'import sys; sys.exit(not ((3, 12) <= sys.version_info[:2] <= (3, 14)))'; then
+  warn "Python 3.12-3.14 is required (found $(python3 --version 2>&1))."
+  warn "The pinned dependencies in app/requirements-pinned.txt are locked for those versions."
+  exit 1
+fi
 say "Creating Python environment at $SHARE/venv"
 mkdir -p "$SHARE"
 # --system-site-packages so the venv can see the system PyGObject/GTK4/libadwaita,
