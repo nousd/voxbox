@@ -7,6 +7,12 @@ BIN="$HOME/.local/bin"
 DESKTOP="$HOME/.local/share/applications"
 
 command -v voxbox >/dev/null && voxbox quit >/dev/null 2>&1 || true
+pkill -f 'voxbox\.py daemon' 2>/dev/null || true
+
+# Remove the Omarchy bar widget/plugin too, if present.
+if command -v omarchy >/dev/null; then
+  omarchy plugin remove io.github.nousd.voxbox --yes >/dev/null 2>&1 || true
+fi
 
 rm -f "$BIN/voxbox" "$BIN/voxbox-add-language"
 rm -f "$DESKTOP/voxbox.desktop"

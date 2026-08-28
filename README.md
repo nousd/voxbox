@@ -48,8 +48,12 @@ voxbox-add-language el de      # no arguments lists what you can add
 ## Uninstall
 
 ```bash
-./uninstall.sh          # --purge removes settings too
+~/.config/omarchy/plugins/io.github.nousd.voxbox/uninstall.sh   # or ./uninstall.sh from a clone
 ```
+
+Removes everything: bar widget, engine, voices, launcher entry. `--purge`
+removes your settings too. (The app launcher's own "Uninstall" only removes
+the launcher entry — that's how Omarchy treats local apps.)
 
 Built on [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx),
 [piper](https://github.com/OHF-Voice/piper1-gpl),
