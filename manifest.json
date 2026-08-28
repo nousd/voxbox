@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.nousd.voxbox",
   "name": "Voxbox",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "author": "nousd",
   "license": "MIT",
   "description": "Reads anything on your screen aloud. 100% offline. 51 languages.",

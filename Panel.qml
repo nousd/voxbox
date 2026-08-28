@@ -100,14 +100,37 @@ Panel {
 
         PanelSeparator { foreground: root.contentForeground }
 
-        Text {
-          visible: root.host ? root.host.daemonMissing : false
+        Column {
+          visible: root.host ? (root.host.daemonMissing || root.host.installing) : false
           width: parent.width
-          wrapMode: Text.Wrap
-          text: "The speech engine is not installed. Run install.sh from the Voxbox repository, then reopen this panel."
-          color: root.dim
-          font.family: root.contentFontFamily
-          font.pixelSize: Style.font.bodySmall
+          spacing: Style.space(8)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: root.host && root.host.installing
+              ? "Installing the speech engine — one-time ~600 MB download, all files sha256-verified."
+              : "Voxbox needs its speech engine: a one-time ~600 MB download of offline voice models."
+            color: root.contentForeground
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.body
+          }
+          Button {
+            visible: !(root.host && root.host.installing)
+            text: "Install speech engine"
+            iconText: "󰇚"
+            bordered: true
+            foreground: root.contentForeground
+            onClicked: if (root.host) root.host.installEngine()
+          }
+          Text {
+            visible: root.host ? root.host.installLog !== "" : false
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: root.host ? root.host.installLog : ""
+            color: root.dim
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.caption
+          }
         }
 
         // ---- the text being read: click a sentence to start from it

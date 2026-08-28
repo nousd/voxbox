@@ -18,8 +18,10 @@ Omarchy plugin:
 
 ```bash
 omarchy plugin add https://github.com/nousd/voxbox.git --enable
-~/.config/omarchy/plugins/io.github.nousd.voxbox/install.sh   # speech engine, ~600 MB, once
 ```
+
+Click the new bar icon and press **Install speech engine** (one-time ~600 MB,
+sha256-verified) — or run `~/.config/omarchy/plugins/io.github.nousd.voxbox/install.sh`.
 
 Bar icon: **click** — panel · **right-click** — capture a region · **middle** — play/pause.
 No keybindings are installed — bind `voxbox` or `omarchy-shell shell toggle io.github.nousd.voxbox` however you like.

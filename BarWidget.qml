@@ -27,6 +27,15 @@ BarWidget {
   property real volume: 0.85
   property bool reopenAfterCapture: false
   property var pendingCmds: []
+  property bool installing: false
+  property string installLog: ""
+
+  function installEngine() {
+    if (installing) return
+    installing = true
+    installLog = "starting install…"
+    installProc.running = true
+  }
 
   function ensureDaemon() {
     if (!daemon.running) {
@@ -103,6 +112,36 @@ BarWidget {
       statusLine = String(msg.message || "error").slice(0, 60)
       if (reopenAfterCapture) { reopenAfterCapture = false; open() }
       break
+    }
+  }
+
+  Process {
+    id: installProc
+    command: ["bash", Quickshell.env("HOME") + "/.config/omarchy/plugins/io.github.nousd.voxbox/install.sh"]
+    stdout: SplitParser {
+      onRead: function(l) {
+        l = String(l).replace(/\x1b\[[0-9;]*m/g, "").trim()
+        if (l) root.installLog = l.slice(0, 110)
+      }
+    }
+    stderr: SplitParser {
+      onRead: function(l) {
+        l = String(l).replace(/\x1b\[[0-9;]*m/g, "").trim()
+        if (l) root.installLog = l.slice(0, 110)
+      }
+    }
+    onExited: function(code, status) {
+      root.installing = false
+      if (code === 0) {
+        root.installLog = ""
+        root.statusLine = "engine installed"
+        root.daemonMissing = false
+        root.everReady = false
+        root.ensureDaemon()
+        root.sendCmd({ cmd: "status" })
+      } else {
+        root.installLog = "install failed (exit " + code + ") — see the README"
+      }
     }
   }
 
