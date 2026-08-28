@@ -17,8 +17,10 @@ the theme or font changes. Set VOXBOX_APP_ID to run a second, separate instance.
 
 import json
 import os
+import errno
 import re
 import select
+import stat as stat_module
 import subprocess
 import sys
 import threading
@@ -65,6 +67,7 @@ MAX_FILE_BYTES = 50 * 1024 * 1024       # source document size
 MAX_SENTENCES = 1_500
 MAX_SENTENCE_CHARS = 400                # longer chunks are hard-split
 MAX_EVENT_BYTES = 1024 * 1024           # any single daemon JSON line
+MAX_EPUB_MEMBERS = 1000                 # archive entry-count ceiling
 
 
 class InputTooLarge(ValueError):
@@ -1383,6 +1386,39 @@ class Player:
 # --------------------------------------------------------------------------- capture
 
 
+def _open_bounded(path, limit):
+    """Open a document exactly once, race-safe: the final path component must
+    not be a symlink, the opened descriptor must be a regular file, and its
+    size (checked on that same descriptor) must be within the limit. All
+    subsequent reads use this descriptor, so a swap after the check is inert."""
+    try:
+        fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise InputTooLarge("symlinked documents are not followed")
+        raise
+    try:
+        st = os.fstat(fd)
+        if not stat_module.S_ISREG(st.st_mode):
+            raise InputTooLarge("not a regular file")
+        if st.st_size > limit:
+            raise InputTooLarge(f"file larger than {limit // (1024 * 1024)} MB")
+    except BaseException:
+        os.close(fd)
+        raise
+    return os.fdopen(fd, "rb")
+
+
+def _read_member(zf, name, limit):
+    """Stream a ZIP member reading at most limit+1 decompressed bytes - never
+    trusts the header's claimed size."""
+    with zf.open(name) as member:
+        data = member.read(limit + 1)
+    if len(data) > limit:
+        raise InputTooLarge("EPUB member too large")
+    return data
+
+
 def _strip_html(html):
     html = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html)
     html = re.sub(r"(?i)<(br|/p|/div|/h[1-6]|/li)[^>]*>", "\n", html)
@@ -1391,16 +1427,26 @@ def _strip_html(html):
     return _html.unescape(html)
 
 
-def _epub_text(path):
-    """Extract an EPUB's text in reading order (OPF spine), tags stripped."""
+def _epub_text(fileobj):
+    """Extract an EPUB's text in reading order (OPF spine), tags stripped.
+
+    Every member - the OPF manifest included - is streamed under a shared
+    decompressed-byte budget, and the archive's entry count is capped, so a
+    zip bomb fails closed before it can allocate anything meaningful.
+    """
     import zipfile
 
-    with zipfile.ZipFile(path) as zf:
+    budget = MAX_FILE_BYTES
+    with zipfile.ZipFile(fileobj) as zf:
         names = zf.namelist()
+        if len(names) > MAX_EPUB_MEMBERS:
+            raise InputTooLarge("EPUB has too many entries")
         opf = next((n for n in names if n.lower().endswith(".opf")), None)
         order = []
         if opf:
-            manifest = zf.read(opf).decode("utf-8", "replace")
+            raw = _read_member(zf, opf, min(budget, 4 * 1024 * 1024))
+            budget -= len(raw)
+            manifest = raw.decode("utf-8", "replace")
             base = opf.rsplit("/", 1)[0] if "/" in opf else ""
             hrefs = dict(re.findall(r'<item[^>]*id="([^"]+)"[^>]*href="([^"]+)"', manifest))
             hrefs.update({i: h for h, i in re.findall(r'<item[^>]*href="([^"]+)"[^>]*id="([^"]+)"', manifest)})
@@ -1411,36 +1457,42 @@ def _epub_text(path):
         if not order:
             order = [n for n in names if n.lower().endswith((".xhtml", ".html", ".htm"))]
         parts = []
-        total = 0
         for name in order:
             try:
-                info = zf.getinfo(name)
-                if info.file_size > MAX_FILE_BYTES or total + info.file_size > MAX_FILE_BYTES:
-                    raise InputTooLarge("EPUB content too large")
-                total += info.file_size
-                parts.append(_strip_html(zf.read(name).decode("utf-8", "replace")))
+                raw = _read_member(zf, name, budget)
             except KeyError:
                 continue
+            budget -= len(raw)
+            parts.append(_strip_html(raw.decode("utf-8", "replace")))
+            if budget <= 0:
+                raise InputTooLarge("EPUB content too large")
     return "\n\n".join(parts)
 
 
 def open_document(path):
     """Read a document to plain text. Supports txt/md, PDF (pdftotext), EPUB, HTML."""
     path = Path(path)
-    if path.stat().st_size > MAX_FILE_BYTES:
-        raise InputTooLarge(f"file larger than {MAX_FILE_BYTES // (1024*1024)} MB")
     ext = path.suffix.lower()
     if ext == ".pdf":
+        # Probe once (rejects FIFOs, symlinks, oversized files), then let
+        # pdftotext run; a swap after the probe is bounded anyway by
+        # run_capped's output ceiling and timeout.
+        _open_bounded(path, MAX_FILE_BYTES).close()
         out = run_capped(
             ["pdftotext", "-layout", "-nopgbrk", str(path), "-"],
             MAX_TEXT_CHARS * 6, timeout=120,
         )
         return out.decode("utf-8", "replace")
-    if ext == ".epub":
-        return _epub_text(path)
+    with _open_bounded(path, MAX_FILE_BYTES) as handle:
+        if ext == ".epub":
+            return _epub_text(handle)
+        raw = handle.read(MAX_FILE_BYTES + 1)
+    if len(raw) > MAX_FILE_BYTES:
+        raise InputTooLarge(f"file larger than {MAX_FILE_BYTES // (1024 * 1024)} MB")
+    text = raw.decode("utf-8", "replace")
     if ext in (".html", ".htm", ".xhtml"):
-        return _strip_html(path.read_text(errors="replace"))
-    return path.read_text(errors="replace")
+        return _strip_html(text)
+    return text
 
 
 # tesseract's orientation-and-script detection names the alphabet of a crop;
