@@ -1652,6 +1652,9 @@ def capture_selection():
 
 
 def notify(message):
+    # Notification surfaces can render rich text; keep anything derived from a
+    # path or capture inert rather than trusting the renderer's defaults.
+    message = re.sub(r"[<>&]", " ", str(message))
     if which("omarchy-notification-send"):
         subprocess.Popen(["omarchy-notification-send", "-g", "\U000f0507", message],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -37,6 +37,15 @@ BarWidget {
     installProc.running = true
   }
 
+  // Anything derived from captured text or a subprocess is inert before it
+  // reaches a component whose Text items we do not control (PanelHero and the
+  // shared Ui controls default to AutoText): drop the three characters that
+  // can make Qt treat a string as rich text.
+  function plain(value) {
+    return String(value === undefined || value === null ? "" : value)
+      .replace(/[<>&]/g, " ").replace(/\s+/g, " ").trim()
+  }
+
   function ensureDaemon() {
     if (!daemon.running) {
       daemonMissing = false
@@ -81,7 +90,7 @@ BarWidget {
       sentences = msg.sentences || []
       sentenceTotal = sentences.length
       sentenceIndex = 0
-      sourceLine = sentenceTotal > 0 ? ((msg.words || 0) + " words from " + (msg.source || "screen") + (msg.truncated ? " · truncated" : "")) : ""
+      sourceLine = sentenceTotal > 0 ? ((msg.words || 0) + " words from " + plain(msg.source || "screen") + (msg.truncated ? " · truncated" : "")) : ""
       statusLine = sentenceTotal > 0 ? "ready" : "idle"
       if (reopenAfterCapture) {
         reopenAfterCapture = false
@@ -102,14 +111,14 @@ BarWidget {
       if (msg.volume !== undefined) volume = msg.volume
       break
     case "export":
-      statusLine = msg.done ? ("saved " + String(msg.path || "").split("/").pop()) : ("exporting " + (msg.progress || ""))
+      statusLine = msg.done ? ("saved " + plain(String(msg.path || "").split("/").pop())) : ("exporting " + plain(msg.progress || ""))
       break
     case "cancelled":
       statusLine = "cancelled"
       if (reopenAfterCapture) { reopenAfterCapture = false; open() }
       break
     case "error":
-      statusLine = String(msg.message || "error").slice(0, 60)
+      statusLine = plain(msg.message || "error").slice(0, 60)
       if (reopenAfterCapture) { reopenAfterCapture = false; open() }
       break
     }
@@ -121,13 +130,13 @@ BarWidget {
     stdout: SplitParser {
       onRead: function(l) {
         l = String(l).replace(/\x1b\[[0-9;]*m/g, "").trim()
-        if (l) root.installLog = l.slice(0, 110)
+        if (l) root.installLog = root.plain(l).slice(0, 110)
       }
     }
     stderr: SplitParser {
       onRead: function(l) {
         l = String(l).replace(/\x1b\[[0-9;]*m/g, "").trim()
-        if (l) root.installLog = l.slice(0, 110)
+        if (l) root.installLog = root.plain(l).slice(0, 110)
       }
     }
     onExited: function(code, status) {

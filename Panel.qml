@@ -91,6 +91,7 @@ Panel {
           iconComponent: Component {
             Text {
               text: "󰔊"
+              textFormat: Text.PlainText
               color: root.contentForeground
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.display
@@ -107,6 +108,7 @@ Panel {
           Text {
             width: parent.width
             wrapMode: Text.Wrap
+            textFormat: Text.PlainText
             text: root.host && root.host.installing
               ? "Installing the speech engine — one-time ~600 MB download, all files sha256-verified."
               : "Voxbox needs its speech engine: a one-time ~600 MB download of offline voice models."
@@ -126,6 +128,7 @@ Panel {
             visible: root.host ? root.host.installLog !== "" : false
             width: parent.width
             wrapMode: Text.Wrap
+            textFormat: Text.PlainText
             text: root.host ? root.host.installLog : ""
             color: root.dim
             font.family: root.contentFontFamily
@@ -165,6 +168,10 @@ Panel {
                 x: Style.space(6)
                 width: parent.width - Style.space(12)
                 text: modelData
+                // Captured text is never markup: OCR, clipboard and PDF content
+                // must render literally, never as rich text that could fetch
+                // remote resources from inside omarchy-shell.
+                textFormat: Text.PlainText
                 wrapMode: Text.Wrap
                 color: root.contentForeground
                 font.family: root.contentFontFamily
@@ -181,6 +188,7 @@ Panel {
             Text {
               visible: sentenceList.count === 0
               anchors.centerIn: parent
+              textFormat: Text.PlainText
               text: "Capture a region or read your selection to begin"
               color: root.dim
               font.family: root.contentFontFamily
